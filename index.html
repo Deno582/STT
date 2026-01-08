@@ -108,7 +108,7 @@
 
     <div class="controls">
         <button id="btnRefresh">Refresh Data</button>
-        <button id="btnRecenter" class="secondary hidden">Kembali ke Titik Terakhir</button>
+        <button id="btnLive" class="secondary">Live</button>
     </div>
 
     <div id="errorMessage" class="error"></div>
@@ -125,7 +125,7 @@
     </div>
 
     <div class="box">
-        <h3>Riwayat 2 Data Terakhir</h3>
+        <h3>Riwayat Data</h3>
         <table>
             <thead>
                 <tr>
@@ -133,11 +133,16 @@
                     <th>Longitude</th>
                     <th>Speed (km/h)</th>
                     <th>Satellites</th>
-                    <th>Timestamp (ms)</th>
+                    <th>Waktu Terkirimnya Data</th>
                 </tr>
             </thead>
             <tbody id="historyTable"></tbody>
         </table>
+        <div class="controls" style="justify-content: center;">
+            <button id="btnPrev">Previous</button>
+            <span id="pageInfo">Page 1</span>
+            <button id="btnNext">Next</button>
+        </div>
     </div>
 
     <div class="box">
@@ -151,7 +156,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-    const API_URL = "https://api.thingspeak.com/channels/3220147/feeds.json?api_key=4NQXOLFNN9K9JE8Y&results=2";
+    const API_URL = "https://api.thingspeak.com/channels/3220147/feeds.json?api_key=4NQXOLFNN9K9JE8Y&results=10";
     const REFRESH_INTERVAL = 10; // detik
 
     // Default location: Jakarta, Indonesia
@@ -161,7 +166,10 @@
     let map = null;
     let marker = null;
     let lastLatLng = null;
-    let userMovedMap = false;
+    let feeds = [];
+    let currentPage = 1;
+    const itemsPerPage = 3;
+    let isLive = true;
 
     // Initialize map with default location
     initMap(DEFAULT_LAT, DEFAULT_LON);
@@ -174,7 +182,10 @@
     const timeEl = document.getElementById("time");
     const historyTable = document.getElementById("historyTable");
     const errorMessage = document.getElementById("errorMessage");
-    const btnRecenter = document.getElementById("btnRecenter");
+    const btnLive = document.getElementById("btnLive");
+    const btnPrev = document.getElementById("btnPrev");
+    const btnNext = document.getElementById("btnNext");
+    const pageInfo = document.getElementById("pageInfo");
 
     function initMap(lat, lon) {
         map = L.map("map").setView([lat, lon], 15);
@@ -184,27 +195,41 @@
         }).addTo(map);
 
         marker = L.marker([lat, lon]).addTo(map);
+    }
 
-        map.on("movestart zoomstart", () => {
-            userMovedMap = true;
+    function renderTable() {
+        historyTable.innerHTML = "";
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageFeeds = feeds.slice(start, end);
+
+        pageFeeds.forEach((f, index) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${f.field1}</td>
+                <td>${f.field2}</td>
+                <td>${f.field3}</td>
+                <td>${f.field4}</td>
+                <td>${f.field5}</td>
+            `;
+            tr.style.cursor = "pointer";
+            tr.addEventListener("click", () => {
+                const lat = parseFloat(f.field1);
+                const lon = parseFloat(f.field2);
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    marker.setLatLng([lat, lon]);
+                    map.setView([lat, lon]);
+                    isLive = false;
+                    btnLive.textContent = "Live";
+                }
+            });
+            historyTable.appendChild(tr);
         });
 
-        map.on("moveend zoomend", checkMapOutOfView);
+        pageInfo.textContent = `Page ${currentPage}`;
+        btnPrev.disabled = currentPage === 1;
+        btnNext.disabled = end >= feeds.length;
     }
-
-    function checkMapOutOfView() {
-        if (!lastLatLng) return;
-        if (!map.getBounds().contains(lastLatLng)) {
-            btnRecenter.classList.remove("hidden");
-        }
-    }
-
-    btnRecenter.addEventListener("click", () => {
-        if (!lastLatLng) return;
-        map.setView(lastLatLng, map.getZoom());
-        userMovedMap = false;
-        btnRecenter.classList.add("hidden");
-    });
 
     async function fetchData() {
         try {
@@ -218,7 +243,7 @@
                 throw new Error("Data kosong");
             }
 
-            const feeds = json.feeds;
+            feeds = json.feeds;
             const latest = feeds[feeds.length - 1];
 
             const lat = parseFloat(latest.field1);
@@ -230,22 +255,11 @@
 
             latEl.textContent = lat;
             lonEl.textContent = lon;
-            speedEl.textContent = latest.field3;
+            speedEl.textContent = "0"; // Set speed to 0 for testing
             satsEl.textContent = latest.field4;
             timeEl.textContent = new Date().toLocaleString('id-ID');
 
-            historyTable.innerHTML = "";
-            feeds.forEach(f => {
-                const tr = document.createElement("tr");
-                tr.innerHTML = `
-                    <td>${f.field1}</td>
-                    <td>${f.field2}</td>
-                    <td>${f.field3}</td>
-                    <td>${f.field4}</td>
-                    <td>${f.field5}</td>
-                `;
-                historyTable.appendChild(tr);
-            });
+            renderTable();
 
             lastLatLng = L.latLng(lat, lon);
 
@@ -253,7 +267,7 @@
                 initMap(lat, lon);
             } else {
                 marker.setLatLng(lastLatLng);
-                if (!userMovedMap) {
+                if (isLive) {
                     map.setView(lastLatLng);
                 }
             }
@@ -264,6 +278,29 @@
     }
 
     document.getElementById("btnRefresh").addEventListener("click", fetchData);
+
+    btnLive.addEventListener("click", () => {
+        isLive = !isLive;
+        btnLive.textContent = isLive ? "Live" : "Paused";
+        if (isLive && lastLatLng) {
+            map.setView(lastLatLng);
+        }
+    });
+
+    btnPrev.addEventListener("click", () => {
+        if (currentPage > 1) {
+            currentPage--;
+            renderTable();
+        }
+    });
+
+    btnNext.addEventListener("click", () => {
+        const maxPage = Math.ceil(feeds.length / itemsPerPage);
+        if (currentPage < maxPage) {
+            currentPage++;
+            renderTable();
+        }
+    });
 
     fetchData();
     setInterval(fetchData, REFRESH_INTERVAL * 1000);
