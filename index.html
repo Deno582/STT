@@ -133,7 +133,7 @@
                     <th>Longitude</th>
                     <th>Speed (km/h)</th>
                     <th>Satellites</th>
-                    <th>Waktu Terkirimnya Data</th>
+                    <th>Waktu</th>
                 </tr>
             </thead>
             <tbody id="historyTable"></tbody>
@@ -205,12 +205,13 @@
 
         pageFeeds.forEach((f, index) => {
             const tr = document.createElement("tr");
+            const waktu = new Date(f.created_at).toLocaleString('id-ID');
             tr.innerHTML = `
                 <td>${f.field1}</td>
                 <td>${f.field2}</td>
                 <td>${f.field3}</td>
                 <td>${f.field4}</td>
-                <td>${f.field5}</td>
+                <td>${waktu}</td>
             `;
             tr.style.cursor = "pointer";
             tr.addEventListener("click", () => {
@@ -243,8 +244,8 @@
                 throw new Error("Data kosong");
             }
 
-            feeds = json.feeds;
-            const latest = feeds[feeds.length - 1];
+            feeds = json.feeds.reverse();
+            const latest = feeds[0];
 
             const lat = parseFloat(latest.field1);
             const lon = parseFloat(latest.field2);
@@ -257,8 +258,9 @@
             lonEl.textContent = lon;
             speedEl.textContent = "0"; // Set speed to 0 for testing
             satsEl.textContent = latest.field4;
-            timeEl.textContent = new Date().toLocaleString('id-ID');
+            timeEl.textContent = new Date(latest.created_at).toLocaleString('id-ID');
 
+            currentPage = 1; // Reset to page 1 on new data
             renderTable();
 
             lastLatLng = L.latLng(lat, lon);
